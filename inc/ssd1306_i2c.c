@@ -194,3 +194,38 @@ void ssd1306_draw_string(ssd1306_t *ssd, const char *str, uint8_t x, uint8_t y)
     }
   }
 }
+/*Char numeros*/
+void ssd1306_draw_number(ssd1306_t *ssd, char c, uint8_t x, uint8_t y) {
+  if (c < '0' || c > '9') return; // Garante que apenas números sejam desenhados
+
+  uint16_t index = (c - '0') * 8; // Calcula o índice correto na tabela de fontes
+
+  for (uint8_t i = 0; i < 8; ++i) {
+      uint8_t line = font[index + i];
+      for (uint8_t j = 0; j < 8; ++j) {
+          bool pixel_on = (line >> j) & 0x01; // Extrai cada bit da linha
+          ssd1306_pixel(ssd, x + j, y + i, pixel_on); // Desenha corretamente
+      }
+  }
+}
+
+/*String de numeros*/
+void ssd1306_draw_number_string(ssd1306_t *ssd, const char *str, uint8_t x, uint8_t y) {
+  while (*str) {
+      if (*str >= '0' && *str <= '9') { // Garante que apenas números sejam desenhados
+          ssd1306_draw_number(ssd, *str, x, y);
+          x += 8; // Move para o próximo caractere
+      }
+
+      str++; // Avança para o próximo caractere na string
+
+      if (x + 8 >= ssd->width) { // Se atingir a borda direita, pula para a próxima linha
+          x = 0;
+          y += 8;
+      }
+
+      if (y + 8 >= ssd->height) { // Se atingir a borda inferior, para o desenho
+          break;
+      }
+  }
+}

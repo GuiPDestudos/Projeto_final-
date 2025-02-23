@@ -19,15 +19,18 @@
 #define JOY_Y 27
 #define FLASH_TARGET_OFFSET (256 * 1024)
 #define I2C_PORT i2c1
-#define I2C_SDA = 14;
-#define I2C_SCL = 15;
+#define I2C_SDA 14
+#define I2C_SCL 15
 #define endereco 0x3C
+#define WIDTH 128
+#define HEIGHT 64
 
 /* Variáveis Globais */
 ssd1306_t display;
-int horas = 12, minutos = 0, segundos = 0;
+int horas = 15, minutos = 21, segundos = 0;
+int dia = 23, mes = 02, ano = 2025;
 bool ajuste = false;
-bool ajuste_minutos = false;
+bool formato_12h = false;
 
 /* Função para limpar o display */
 void ssd1306_clear(ssd1306_t *display) {
@@ -35,23 +38,25 @@ void ssd1306_clear(ssd1306_t *display) {
     ssd1306_send_data(display);
 }
 
-/* Salvamento de horário na memória Flash */
+/* Salvamento de horário e data na memória Flash */
 void horario_mem() {
-    uint8_t time_data[2] = {horas, minutos};
+    uint8_t time_data[5] = {horas, minutos, dia, mes, ano % 100};
     uint32_t ints = save_and_disable_interrupts();
     flash_range_erase(FLASH_TARGET_OFFSET, FLASH_SECTOR_SIZE);
     flash_range_program(FLASH_TARGET_OFFSET, time_data, sizeof(time_data));
     restore_interrupts(ints);
 }
 
-/* Carregar horário da memória Flash */
+/* Carregar horário e data da memória Flash */
 void carregar_horario() {
     const uint8_t *flash_target_ptr = (const uint8_t *)(XIP_BASE + FLASH_TARGET_OFFSET);
     horas = flash_target_ptr[0];
     minutos = flash_target_ptr[1];
-    if (horas > 23 || minutos > 59) {
-        horas = 12;
-        minutos = 0;
+    dia = flash_target_ptr[2];
+    mes = flash_target_ptr[3];
+    ano = 2000 + flash_target_ptr[4];
+    if (horas > 23 || minutos > 59 || dia > 31 || mes > 12) {
+        horas = 15; minutos = 21; dia = 23; mes = 02; ano = 2025;
     }
 }
 
@@ -65,6 +70,11 @@ bool timer_callback(struct repeating_timer *t) {
             if (minutos >= 60) {
                 minutos = 0;
                 horas = (horas + 1) % 24;
+                if (horas == 0) {
+                    dia++;
+                    if (dia > 31) { dia = 1; mes++; }
+                    if (mes > 12) { mes = 1; ano++; }
+                }
                 horario_mem();
             }
         }
@@ -82,33 +92,31 @@ int leitura_joystick(uint joystick_pin) {
 }
 
 void atualizar_display() {
-    char buffer[10]; 
-    snprintf(buffer, sizeof(buffer), "20:12", horas, minutos);
-
-    ssd1306_fill(&display, false); // Limpa o display
-    ssd1306_rect(&display, 3, 3, 122, 58, true, false); // Desenha uma borda
-
-    // Desenha cada caractere separadamente
-    int x_pos = 40;
-    for (int i = 0; buffer[i] != '\0'; i++) {
-        ssd1306_draw_char(&display, buffer[i], x_pos, 25);
-        x_pos += 8; // Ajuste do espaçamento entre caracteres
-    }
-
-    ssd1306_send_data(&display); // Atualiza o display
+    char buffer[20];
+    char data_buffer[20];
+    
+    int hora_display = formato_12h ? (horas % 12 == 0 ? 12 : horas % 12) : horas;
+    char periodo[3] = "AM";
+    if (formato_12h && horas >= 12) strcpy(periodo, "PM");
+    
+    ssd1306_fill(&display, false);
+    ssd1306_rect(&display, 3, 3, 122, 58, true, false);
+    sprintf(buffer, "%02d:%02d:%02d %s", hora_display, minutos, segundos, formato_12h ? periodo : "");
+    ssd1306_draw_string(&display, buffer, 20, 25);
+    sprintf(data_buffer, "%02d/%02d/%04d", dia, mes, ano);
+    ssd1306_draw_string(&display, data_buffer, 30, 45);
+    
+    ssd1306_send_data(&display);
 }
 
-void display_relogio(){
+void display_relogio() {
     i2c_init(I2C_PORT, 400 * 1000);
-   
-    gpio_set_function(14, GPIO_FUNC_I2C);
-    gpio_set_function(15, GPIO_FUNC_I2C);
-    gpio_pull_up(14);
-    gpio_pull_up(15);
-    
+    gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(I2C_SDA);
+    gpio_pull_up(I2C_SCL);
     ssd1306_init(&display, WIDTH, HEIGHT, false, endereco, I2C_PORT);
     ssd1306_config(&display);
-    
     ssd1306_fill(&display, false);
     ssd1306_send_data(&display);
 }
@@ -139,27 +147,25 @@ int main() {
             sleep_ms(200);
             ajuste = !ajuste;
         }
-
+        
+        if (!gpio_get(BOTAO_JOYSTICK)) {
+            sleep_ms(200);
+            formato_12h = !formato_12h;
+        }
+        
         if (ajuste) {
             int mov_x = leitura_joystick(JOY_X);
-            if (mov_x == 1) {
-                horas = (horas + 1) % 24;
-            } else if (mov_x == -1) {
-                horas = (horas - 1 + 24) % 24;
-            }
+            if (mov_x == 1) horas = (horas + 1) % 24;
+            else if (mov_x == -1) horas = (horas - 1 + 24) % 24;
             
             int mov_y = leitura_joystick(JOY_Y);
-            if (mov_y == 1) {
-                minutos = (minutos + 1) % 60;
-            } else if (mov_y == -1) {
-                minutos = (minutos - 1 + 60) % 60;
-            }
+            if (mov_y == 1) minutos = (minutos + 1) % 60;
+            else if (mov_y == -1) minutos = (minutos - 1 + 60) % 60;
             
             horario_mem();
         }
-
-        atualizar_display(); // Atualiza o display com a hora atual
+        
+        atualizar_display();
         sleep_ms(200);
-
     }
 }
