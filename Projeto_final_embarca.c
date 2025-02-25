@@ -27,8 +27,8 @@
 
 /* Variáveis Globais */
 ssd1306_t display;
-int horas = 15, minutos = 21, segundos = 0;
-int dia = 23, mes = 02, ano = 2025;
+int horas = 15, minutos = 46, segundos = 00;
+int dia = 25, mes = 02, ano = 2025;
 bool ajuste = false;
 bool formato_12h = false;
 
@@ -56,7 +56,7 @@ void carregar_horario() {
     mes = flash_target_ptr[3];
     ano = 2000 + flash_target_ptr[4];
     if (horas > 23 || minutos > 59 || dia > 31 || mes > 12) {
-        horas = 15; minutos = 21; dia = 23; mes = 02; ano = 2025;
+        horas = 15; minutos = 46; dia = 25; mes = 02; ano = 2025;
     }
 }
 
@@ -83,12 +83,13 @@ bool timer_callback(struct repeating_timer *t) {
 }
 
 /* Função para capturar entrada do joystick */
-int leitura_joystick(uint joystick_pin) {
-    adc_select_input(joystick_pin);
-    uint16_t valor = adc_read();
-    if (valor < 1000) return -1;
-    if (valor > 3000) return 1;
-    return 0;
+int leitura_joystick(uint canal_adc) {
+    adc_select_input(canal_adc);  // Seleciona o canal ADC correto
+    uint16_t valor = adc_read();  // Lê o valor analógico do ADC
+    
+    if (valor < 1000) return -1;  // Movimento para a esquerda ou para baixo
+    if (valor > 3000) return 1;   // Movimento para a direita ou para cima
+    return 0;                     // Sem movimento
 }
 
 void atualizar_display() {
@@ -142,7 +143,7 @@ int main() {
     
     display_relogio();
     
-    while (true) {
+    while (1) {
         if (!gpio_get(BOTAO_A)) {
             sleep_ms(200);
             ajuste = !ajuste;
@@ -154,11 +155,11 @@ int main() {
         }
         
         if (ajuste) {
-            int mov_x = leitura_joystick(JOY_X);
+            int mov_x = leitura_joystick(0);
             if (mov_x == 1) horas = (horas + 1) % 24;
             else if (mov_x == -1) horas = (horas - 1 + 24) % 24;
             
-            int mov_y = leitura_joystick(JOY_Y);
+            int mov_y = leitura_joystick(1);
             if (mov_y == 1) minutos = (minutos + 1) % 60;
             else if (mov_y == -1) minutos = (minutos - 1 + 60) % 60;
             
